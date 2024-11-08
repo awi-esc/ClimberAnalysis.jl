@@ -67,7 +67,7 @@ function global_map(data::DimArray, title::String; colors::Union{Symbol, Nothing
     fig 
 end
 
-function map_pannel(data_list , titles::Vector{String}; SO::Bool=false, colors::Union{Vector{Symbol}, Nothing}=nothing)
+function map_panel(data_list , titles::Vector{String}; SO::Bool=false, colors::Union{Vector{Symbol}, Nothing}=nothing)
     """ 
         plot 2x2 plots 
         
@@ -110,8 +110,8 @@ end
 
 
 
-function amoc_map_pannel(map_list::Vector{Array{Union{Missing, Float32},3}}, opsi_list::Vector{Matrix{AbstractFloat}} , data_lat::NCDataset, data_si, titles::Vector{String})#colors::Vector{Union{String, Nothing}}=[nothing], contours::Bool=false,
-    fig = Figure(size = (1000, 700))
+function amoc_map_panel(map_list, opsi_list , data_si, titles::Vector{String})#colors::Vector{Union{String, Nothing}}=[nothing], contours::Bool=false,
+    fig = Figure(size = (1000, 600))
     letters = collect('a':'h')
     gas = [GeoAxis(fig[1,j], dest = "+proj=ortho +lat_0= 60 +lon_0= -40",xgridvisible=false,ygridvisible=false, xticklabelsvisible=false , yticklabelsvisible=false, limits = ((-90, 90), (20, 690)), height=300, xlabelpadding = 18, title = titles[j]) for j = 1:4]
 
@@ -119,7 +119,7 @@ function amoc_map_pannel(map_list::Vector{Array{Union{Missing, Float32},3}}, ops
 
     colors = reverse(ColorSchemes.magma.colors);
 
-    hms = [heatmap!(gas[j], Array(data_lat["lon"]), Array(data_lat["lat"]), Array(map_list[j][:,:,1]), colormap = colors, nan_color= :white) for j = 1:4]
+    hms = [heatmap!(gas[j], map_list[j][:,:,1], colormap = colors, nan_color= :white) for j = 1:4]
     con= [contour!(gas[j], data_si, levels= [0,1], labels = false, color=:black) for j =1:4];
 
     lns= [lines!(gas[j], GeoMakie.coastlines(), color=:grey,) for j = 1:4];
@@ -134,21 +134,23 @@ function amoc_map_pannel(map_list::Vector{Array{Union{Missing, Float32},3}}, ops
 
 
     
-    extremas = map(extrema, skip(isnan,opsi_list[4]))
+    extremas = map(extrema, filter(!isnan,opsi_list[4]))
     global_min = minimum(t->first(t), extremas)
-    extremas = map(extrema, skip(isnan,opsi_list[1]))
+    extremas = map(extrema, filter(!isnan,opsi_list[1]))
     global_max = maximum(t->last(t), extremas)
     # these limits have to be shared by the maps and the colorbar
     clims = (-global_max, global_max)
     println(clims)
-    prfs = [heatmap!(axs[j], data["latv1"], data["levw"], opsi_list[j], colormap= cgrad(reverse(ColorSchemes.RdBu.colors),26, categorical=true), nan_color= :gray; colorrange=clims) for j = 1:4]
+    prfs = [heatmap!(axs[j], opsi_list[j], colormap= cgrad(reverse(ColorSchemes.RdBu.colors),26, categorical=true), nan_color= :gray; colorrange=clims) for j = 1:4]
     
     Colorbar(fig[2, 5], prfs[1], label="Sv", height= 200)
 
     [Label(fig[i, j, TopLeft()], "($(letters[(i-1)*4+j]))", fontsize=16,
         padding=(-2, 0, -20, 0)) for i = 1:2, j = 1:4]
 
-    fig 
+    rowgap!(fig.layout, 0.4)
+
+    return fig 
 end
 
 
