@@ -5,7 +5,7 @@ using DimensionalData
 using CommonDataModel
 
 
-function getAveragedVar(data, varname::String, mean::Bool=true)
+function getAveragedVar(data, varname::String; mean::Bool=true)
     if mean
         var= Array(data[varname][:,:,13,end])
     else
@@ -29,13 +29,47 @@ function getAnomVar(data, varname::String, ind_year::Number; ref_year::Number=1)
     return data1-data2
 end
 
+
+function getDataYearlyMax(data, varname::String; year_ind::Union{Number,Nothing}=nothing)
+
+    if isnothing(year_ind)
+        var= maximum(Array(data[varname][:,:,1:12,end]),dims=3)[:,:,1]
+    else
+        var= maximum(Array(data[varname][:,:,1:12,year_ind]),dims=3)[:,:,1]
+    end
+
+    lon = data["lon"];
+    lat = data["lat"];
+    outdata = DimArray(Array(var), (Dim{:lon}(lon), Dim{:lat}(lat)))
+
+    return outdata
+
+end
+
+function getDataDepthProfile(data, varname::String; year_ind::Union{Number,Nothing}=nothing)
+
+    if isnothing(year_ind)
+        var= Array(data[varname][:,:,13,end])
+    else
+        var= Array(data[varname][:,:,13,year_ind])
+    end
+
+    lat = data["latv1"];
+    levw = data["levw"];
+    var = ifelse.(iszero.(var), NaN, var)
+    outdata = DimArray(Array(var), (Dim{:latv1}(lat),Dim{:levw}(levw)))
+
+    return outdata
+
+end
+
 function getYearlyMean(data::CommonDataModel.CFVariable)
     data_yearly=data[:,:,13,:]
     return data_yearly
 end
 
 
-function getSeasonalMean(data::CommonDataModel.CFVariable, season::String, yearindex::Union{Number, Nothing} = nothing)
+function getSeasonalMean(data::CommonDataModel.CFVariable, season::String; yearindex::Union{Number, Nothing} = nothing)
     if isnothing(yearindex)
         if season == "DJF"
             data_out=mean(data[:,:,[1,2,12],end],dims=3)
