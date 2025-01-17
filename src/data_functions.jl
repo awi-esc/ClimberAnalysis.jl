@@ -97,3 +97,47 @@ function getSeasonalMean(data::CommonDataModel.CFVariable, season::String; yeari
     end    
     return data_out
 end
+
+
+
+# get DimArray with yearly values for diffent models and dimensions
+
+function VarAsDimArray(data, varname::String, dimension::String; model::String="climberX")
+    lon = data["lon"];
+    lat = data["lat"];
+    
+    if model=="climberX" #has additional dimension for monthly data
+        time = data["time"];
+        if dimension=="3D"
+            outdata = DimArray(data[varname][:,:,13,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:time}(time)));
+        else
+            lev = data["lev"]
+            outdata = DimArray(data[varname][:,:,:,13,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:lev}(lev), Dim{:time}(time)))
+        end
+
+    elseif model=="mom5"
+        time = 1:length(data["time"]);
+        if dimension=="3D"
+            outdata = DimArray(data[varname][:,:,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:time}(time)));
+        else
+            lev = data["st_ocean"]
+            outdata = DimArray(data[varname][:,:,:,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:lev}(lev), Dim{:time}(time)))
+        end
+    end
+
+    return outdata
+end
+
+# get DimArray with yearly values for diffent models and dimensions
+
+function ClimberAreaAsDimArray(data)
+    lon = data["lon"];
+    lat = data["lat"];
+    time = data["time"];
+    outdata = DimArray(data["area"][:,:,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:time}(time)));
+
+    return outdata
+end
+
+mom5_data= NCDataset("/albedo/work/projects/p_forclima/NaHosMIP/cm2mc_PISM/concat_results_CM2Mc_PISM_coupling_after_spinup_y1860_norestore_uh03_extended/regridded/ocean-yearly_sub2_regridded.nc", "r"); 
+VarAsDimArray(mom5_data,"temp", "4D", model="mom5")[time=1000:1500]
