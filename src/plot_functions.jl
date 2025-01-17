@@ -24,7 +24,7 @@ function getColorbarTicks(data::DimArray, num_cont::Number)
 end
 
 
-function global_map(data::DimArray, title::String; colors::Union{Symbol, Nothing}=nothing, contours::Bool=true, num_cont::Number= 6)
+function global_map(data::DimArray, title::String; crange_opt=false, crange=(0,100), colors::Union{Symbol, Nothing}=nothing, contours::Bool=true, num_cont::Number= 6, save_out=false, outfile="Unknown_output", output_path=" ")
     """
         function to plot a single valiable on worldmap
         #Arguments
@@ -48,7 +48,17 @@ function global_map(data::DimArray, title::String; colors::Union{Symbol, Nothing
         colors=reverse(ColorSchemes.RdBu.colors);
     end
 
-    min, max, step = getColorbarTicks(data, num_cont)
+    if crange_opt
+        min=crange[1];
+        max=crange[2];
+        step= num_cont;
+    else
+        max = ceil(maximum(skipmissing(data)))
+        min = floor(minimum(skipmissing(data)))
+        step = Int(floor((max-min)/num_cont))
+        println(min, max, step)
+        min, max, step = getColorbarTicks(data, num_cont)
+    end
 
     #plot data as map
     hm = heatmap!(ax, data, colormap= colors, colorrange= (min, max), nan_color= :lightgray);
@@ -61,10 +71,14 @@ function global_map(data::DimArray, title::String; colors::Union{Symbol, Nothing
         contour!(ax, data, levels= min:step:max, labels = false, color=:black);
         Colorbar(fig[1,2], hm, ticks = min:step:max);
     else
-        Colorbar(fig[1,2], hm, ticks = min:step:max);
+        Colorbar(fig[1,2], hm)#, ticks = min:step:max);
     end
-
-    fig 
+    
+    if save_out
+        save(joinpath(output_path, outfile), fig)
+    end
+    
+    display(fig) 
 end
 
 function map_panel(data_list , titles::Vector{String}; SO::Bool=false, colors::Union{Vector{Symbol}, Nothing}=nothing)
@@ -83,9 +97,9 @@ function map_panel(data_list , titles::Vector{String}; SO::Bool=false, colors::U
 
     # define 8 axis (4 of them for colorbars)
     if SO
-        gas = [GeoAxis(fig[i,j],dest="+proj=ortho +lon_0=0 +lat_0=-90", limits = ((-180, 180), (-90, -60)), width=400,  title = titles[k_mapping[(i,j)]]) for i = 1:2:3, j = 1:2] #xgridvisible=false,ygridvisible=false, xticklabelsvisible=false , yticklabelsvisible=false,
+        gas = [GeoAxis(fig[i,j],dest="+proj=ortho +lon_0=0 +lat_0=-90", xgridwidth=.5, ygridwidth=.5, limits = ((-180, 180), (-90, -60)), width=400,  title = titles[k_mapping[(i,j)]]) for i = 1:2:3, j = 1:2] #xgridvisible=false,ygridvisible=false, xticklabelsvisible=false , yticklabelsvisible=false,
     else
-        gas = [GeoAxis(fig[i,j],  width=400,  title = titles[k_mapping[(i,j)]]) for i = 1:2:3, j = 1:2] #xgridvisible=false,ygridvisible=false, xticklabelsvisible=false , yticklabelsvisible=false,
+        gas = [GeoAxis(fig[i,j],dest="+proj=eqc", xgridwidth=.5, ygridwidth=.5, width=400,  title = titles[k_mapping[(i,j)]]) for i = 1:2:3, j = 1:2] #xgridvisible=false,ygridvisible=false, xticklabelsvisible=false , yticklabelsvisible=false,
     end
 
     #set default colors to RdBu
@@ -93,14 +107,20 @@ function map_panel(data_list , titles::Vector{String}; SO::Bool=false, colors::U
         colors=[reverse(ColorSchemes.RdBu.colors) for i in 1:4];
     end
 
-    hms = [heatmap!(gas[i,j],data_list[k_mapping[(i, j)]],colormap= colors[k_mapping[(i, j)]], nan_color= :lightgray) for i =1:2, j = 1:2]
+    if SO
+        hms = [heatmap!(gas[i,j],data_list[k_mapping[(i, j)]],colormap= colors[k_mapping[(i, j)]], nan_color= :lightgray, colorrange = (-1, 1) .* maximum(abs, skipnan(Array(data_list[k_mapping[(i, j)]][lat=At(-90:5:-60;atol=2.5)])))) for i =1:2, j = 1:2]
+    else
+        hms = [heatmap!(gas[i,j],data_list[k_mapping[(i, j)]],colormap= colors[k_mapping[(i, j)]], nan_color= :lightgray, colorrange = (-1, 1) .* maximum(abs, skipnan(Array(data_list[k_mapping[(i, j)]])))) for i =1:2, j = 1:2]
+    end
+    
+    con= [contour!(gas[i,j],data_list[k_mapping[(i, j)]], levels= ((-1).* maximum(abs, skipnan(Array(data_list[k_mapping[(i, j)]])))):(0.2.*maximum(abs, skipnan(Array(data_list[k_mapping[(i, j)]])))):(maximum(abs, skipnan(Array(data_list[k_mapping[(i, j)]])))), labels = false, color=:black) for i =1:2, j = 1:2];
 
     lns= [lines!(gas[i,j], GeoMakie.coastlines(), color=:grey) for i =1:2, j = 1:2];
 
-    Colorbar(fig[2, 1], hms[1],  vertical= false, width =200, scale = .5)
-    Colorbar(fig[2, 2], hms[2],  vertical= false, width= 200, scale = .5)
-    Colorbar(fig[4, 1], hms[3], vertical= false, width =200)
-    Colorbar(fig[4, 2], hms[4], vertical= false, width= 200)
+    Colorbar(fig[2, 1], hms[1],  vertical= false, flipaxis = false, width =200, scale = .5)
+    Colorbar(fig[2, 2], hms[3],  vertical= false, flipaxis = false, width= 200, scale = .5)
+    Colorbar(fig[4, 1], hms[2], vertical= false, flipaxis = false, width =200)
+    Colorbar(fig[4, 2], hms[4], vertical= false, flipaxis = false, width= 200)
 
     [Label(fig[i, j, TopLeft()], "($(letters[k_mapping[(i,j)]]))", fontsize=16,
         padding=(-2, 0, -20, 0)) for i = 1:2:3, j = 1:2]
@@ -170,7 +190,7 @@ function hysteresis_plot(data_up::Dataset, data_down::Dataset, title::String)
 end
 
 function timeseries(data::Vector, ylabels::Vector{String}; mov_average::Bool=true, wind::Number=100)
-    f = Figure()
+    f = Figure(size = (800, 800))
     list_ax =[]
     for i in 1:(length(data)-1)
         ax = Axis(f[i,1], xtickformat = "{:.0f}", xlabel="time (years)", ylabel = ylabels[i])
@@ -178,6 +198,7 @@ function timeseries(data::Vector, ylabels::Vector{String}; mov_average::Bool=tru
             hidexdecorations!(ax, ticks=false, grid=false)
         end
         lines!(ax, data[1], data[i+1])
+        vlines!(ax, [1630], color=:gray, alpha=0.7)
         if mov_average
             lines!(ax, data[1], movmean(data[i+1], wind))
         end
@@ -190,3 +211,91 @@ function timeseries(data::Vector, ylabels::Vector{String}; mov_average::Bool=tru
     f
 end
 
+
+#function to create Hovmöller plot
+
+function plot_depth_time(variable, name, crange; ax_limits=(nothing, (0, 4500)), save_out=false, outfile="Unknown_output")
+    fig = Figure();
+    ax = Axis(fig[1,1], 
+            title = name,
+            xlabel = "time (years)",
+            ylabel = "depth (m)",
+            limits = ax_limits #(1500,1800)
+            );
+    
+        colors=reverse(ColorSchemes.RdBu.colors);
+        hm2 = heatmap!(ax, transpose(variable), colorrange=crange, colormap=colors)
+        cb = Colorbar(fig[1, 2], hm2)
+        ax.yreversed=true
+    if save_out
+        save(joinpath(output_path, outfile), fig)
+    end
+    fig
+end
+
+
+
+function plot_Ross_temp_lat_ts(VarData,type)
+    var_ross = VarData[lon=Where(x -> x < -130 || x > 160)];
+    display(var_ross)
+
+    if (type=="mom5")
+        depths=[18+l for l=1:8];
+    else
+        depths=[13+l for l=1:8];
+    end
+
+    for i in depths
+        ross_mean= dropdims(mapslices(x -> Statistics.mean(skipmissing(x)),var_ross, dims=(:lon)), dims=(:lon))[lev=i] ;
+        fig = Figure();
+        ax = Axis(fig[1,1], 
+                title = "ClimberX",
+                xlabel = "time (years)",
+                ylabel = "depth (m)",
+                limits = (nothing, (-90, 90))
+                );
+        
+            colors=reverse(ColorSchemes.RdBu.colors);
+            hm = heatmap!(ax, transpose(ross_mean), colorrange = (0,8), colormap=colors)
+            cb = Colorbar(fig[1, 2], hm)
+            ax.yreversed=true
+    
+        display(fig)
+    end
+end
+    
+function plotSI_RossTS(variables, names; save_out=false, outfile="Unknown_output")
+
+    f = Figure(title = "Hosing 0.3 Sv (no restore): Ross Sea Mean",size = (800, 800) )
+    list_ax =[]
+    for i=1:length(names)
+        data1= get_weighted_Ross_ts(variables[i], climber_area, "3D")
+        data2= get_weighted_Ross_ts(variables[i], climber_area, "3D", lat_val=-30)
+        data3= get_weighted_SO_ts(variables[i], climber_area, "3D", lat_val=-30)
+        if (i%2==1)
+            ax = Axis(f[i,1],  xtickformat = "{:.0f}", xlabel="time (years)",yticklabelpad = 64.0, ylabel = names[i])
+        else
+            ax = Axis(f[i,1],  xtickformat = "{:.0f}", xlabel="time (years)", ylabel = names[i])
+        end
+
+        if i!= (length(names))
+            hidexdecorations!(ax, ticks=false, grid=false)
+        end
+        lines!(ax, data1, label= "Ross")
+        lines!(ax, data2, label= "Ross extended")
+        lines!(ax, data3, label= "Southern Ocean")
+
+        vlines!(ax, [1630], color=:gray, alpha=0.7)
+        push!(list_ax,ax)
+
+        if (i==1)
+            axislegend(ax, position = :lc );
+        end
+    end
+    rowgap!(f.layout, 0.2)
+
+    if save_out
+        save(joinpath(output_path, outfile), f)
+    end
+    f
+end
