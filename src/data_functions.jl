@@ -5,11 +5,19 @@ using DimensionalData
 using CommonDataModel
 
 
-function getAveragedVar(data, varname::String; mean::Bool=true)
+function getAveragedVar(data, varname::String; mean::Bool=true, year_ind=nothing, month_ind=9)
+# Simple function to convert climberX data into a DimArray. Here: get annual mean of a 3D variable for a specific year. 
+# Output: 2D DimArray with dims lat, lon
+
+    # default year should be the end of the simulation
+    if year_ind === nothing
+        year_ind = length(data[varname]["time"]) 
+    end
+
     if mean
-        var= Array(data[varname][:,:,13,end])
+        var= Array(data[varname][:,:,13,year_ind])
     else
-        var=nothing
+        var= Array(data[varname][:,:, month_ind,year_ind])
     end
 
     lon = data["lon"];
@@ -19,18 +27,19 @@ function getAveragedVar(data, varname::String; mean::Bool=true)
     return outdata
 end
 
+
 function getAnomVar(data, varname::String, ind_year::Number; ref_year::Number=1)
-    val1= Array(data[varname][:,:,13,ind_year])
-    val2= Array(data[varname][:,:,13,ref_year])
-    lon = data["lon"];
-    lat = data["lat"];
-    data1 = DimArray(Array(val1), (Dim{:lon}(lon), Dim{:lat}(lat)))
-    data2 = DimArray(Array(val2), (Dim{:lon}(lon), Dim{:lat}(lat)))
+# Simple function to calculate anomaly of climberX data into a DimArray. Here: get difference of annual means of two 3D variables for specific years. 
+# Output: 2D DimArray with dims lat, lon
+    data1 = getAveragedVar(data, varname, year_ind=ind_year)
+    data2 = getAveragedVar(data, varname, year_ind=ref_year)
     return data1-data2
 end
 
 
 function getDataYearlyMax(data, varname::String; year_ind::Union{Number,Nothing}=nothing)
+# Simple function to get maximum climberX variable in a DimArray. Here: annual max of a 3D variable for a specific year. 
+# Output: 2D DimArray with dims lat, lon
 
     if isnothing(year_ind)
         var= maximum(Array(data[varname][:,:,1:12,end]),dims=3)[:,:,1]
@@ -102,25 +111,29 @@ end
 
 # get DimArray with yearly values for diffent models and dimensions
 
-function VarAsDimArray(data, varname::String, dimension::String; model::String="climberX")
+function VarAsDimArray(data, varname::String, dimension::String; model::String="climberX", month::Number=13, decadal=false)
     lon = data["lon"];
     lat = data["lat"];
     
     if model=="climberX" #has additional dimension for monthly data
         time = data["time"];
         if dimension=="3D"
-            outdata = DimArray(data[varname][:,:,13,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:time}(time)));
+            outdata = DimArray(data[varname][:,:,month,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:time}(time)));
         else
-            lev = data["lev"]
-            outdata = DimArray(data[varname][:,:,:,13,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:lev}(lev), Dim{:time}(time)))
+            lev = data["lev"];
+            outdata = DimArray(data[varname][:,:,:,month,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:lev}(lev), Dim{:time}(time)))
         end
 
     elseif model=="mom5"
         time = 1:length(data["time"]);
+        if decadal
+            time = 1:10:length(data["time"])*10;
+            println(time)
+        end
         if dimension=="3D"
             outdata = DimArray(data[varname][:,:,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:time}(time)));
         else
-            lev = data["st_ocean"]
+            lev = data["st_ocean"];
             outdata = DimArray(data[varname][:,:,:,:], (Dim{:lon}(lon), Dim{:lat}(lat), Dim{:lev}(lev), Dim{:time}(time)))
         end
     end
@@ -139,5 +152,37 @@ function ClimberAreaAsDimArray(data)
     return outdata
 end
 
-mom5_data= NCDataset("/albedo/work/projects/p_forclima/NaHosMIP/cm2mc_PISM/concat_results_CM2Mc_PISM_coupling_after_spinup_y1860_norestore_uh03_extended/regridded/ocean-yearly_sub2_regridded.nc", "r"); 
-VarAsDimArray(mom5_data,"temp", "4D", model="mom5")[time=1000:1500]
+
+function DownscaleTime(data, timestep; confunc="mean")
+#function to change 3D Array with dim 3 = time to a lower time resolution, eg. timestep= 10 allows to go from annual to decadal data
+    if (confunc=="max")
+        test=mapslices(x -> Statistics.maximum(x),data[:,:,1:timestep], dims=(:time))
+        for i in timestep:timestep:(length(data.dims[3])-timestep)
+            test=cat(test,mapslices(x -> Statistics.maximum(x),data[:,:,1+i:timestep+i], dims=(:time)),dims=3)
+        end
+
+    else
+        test=mapslices(x -> Statistics.mean(skipmissing(x)),data[:,:,:,1:timestep], dims=(:time))
+        for i in timestep:timestep:(length(data.dims[4])-timestep)
+            test=cat(test,mapslices(x -> Statistics.mean(skipmissing(x)),data[:,:,:,1+i:timestep+i], dims=(:time)),dims=4)
+        end
+    end
+
+    return test
+end
+
+
+
+function conv_to_rho_unit(data, ref_data, type)
+# function for temperature (type=T) or salinity (type=S) data to convert them to density units following Appendix D5 in https://cp.copernicus.org/articles/20/2719/2024/cp-20-2719-2024.pdf 
+    if type=="T"
+        alpha=-(0.052 .+0.012 .* ref_data);
+        data_new= alpha .* data;
+    elseif type=="S"
+        beta=0.8;
+        data_new= beta .* data;
+    else
+        println("Type not correct! Choose either 'T' or 'S'");
+    end
+    return data_new
+end
